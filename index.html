@@ -45,7 +45,7 @@
       flex: 1;
       min-height: 0;
       background: #fff;
-      padding: 24px 28px 28px;
+      padding: 24px 20px 28px;
       border-radius: 16px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.08);
       display: flex;
@@ -63,7 +63,7 @@
       user-select: none;
     }
     .candidate {
-      padding: 14px 20px;
+      padding: 10px 16px;
       margin: 12px 0;
       background: #f4f6fb;
       border-radius: 14px;
@@ -78,9 +78,13 @@
       user-select: none;
       position: relative;
     }
+    .candidate.interview {
+      background: #e8f5e9;
+      border: 2px solid #66bb6a;
+    }
     .candidate img {
-      width: 36px;
-      height: 36px;
+      width: 48px;
+      height: 48px;
       border-radius: 50%;
       object-fit: cover;
       flex-shrink: 0;
@@ -226,24 +230,12 @@
       transform: translateY(0);
     }
   </style>
-  <script>
-    const adgang = prompt("Siden er adgangsbeskyttet. Indtast kode:");
-    if (adgang !== "mejlgade50") {
-      document.body.innerHTML = "<div style='font-family:sans-serif;text-align:center;margin-top:50px;'><h1>⛔ Adgang nægtet</h1><p>Forkert kode</p></div>";
-      throw new Error("Forkert adgangskode");
-    }
-  </script>
 </head>
 <body>
   <div id="status-message" style="text-align:center; background:#e6f4ea; color:#2e7d32; padding:10px; margin:0; font-weight:bold; transition: opacity 0.3s ease; opacity: 0;"></div>
   <!-- <div class="header">Ansøgersortering</div> -->
   <main>
     <div class="container">
-      <div class="column dropzone" id="interview">
-        <h2>✅ Til samtale</h2>
-      </div>
-
-
       <div class="column dropzone" id="no-interview">
         <h2>📄 Ansøgere (<span id="applicant-count">0</span>)</h2>
         <div class="search"><input type="text" placeholder="Søg kandidat..." class="search-input" data-zone="no-interview"></div>
@@ -253,9 +245,6 @@
       <div class="controls">
         <input type="text" id="newName" placeholder="Tilføj ansøger...">
         <button onclick="addAnsoeger()">Tilføj</button>
-        <button onclick="saveState()">Gem</button>
-        <button onclick="loadState()">Indlæs</button>
-        <button onclick="resetAll()">Nulstil</button>
       </div>
     </div>
   </main>
@@ -286,7 +275,7 @@
       const upButton = document.createElement('button');
       upButton.className = 'vote-button';
       upButton.textContent = '⬆️';
-      upButton.addEventListener('click', () => {
+      upButton.addEventListener('click', async () => {
         let currentVotes = parseInt(voteSpan.dataset.votes, 10) + 1;
         voteSpan.dataset.votes = currentVotes;
         nameSpan.textContent = name;
@@ -294,12 +283,13 @@
         wrapper.classList.add('vote-changed');
         setTimeout(() => wrapper.classList.remove('vote-changed'), 800);
         setTimeout(() => sortCandidate(wrapper), 800);
+        saveState();
       });
 
       const downButton = document.createElement('button');
       downButton.className = 'vote-button';
       downButton.textContent = '⬇️';
-      downButton.addEventListener('click', () => {
+      downButton.addEventListener('click', async () => {
         let currentVotes = parseInt(voteSpan.dataset.votes, 10);
         if (currentVotes > 0) {
           currentVotes--;
@@ -309,6 +299,7 @@
           wrapper.classList.add('vote-changed');
           setTimeout(() => wrapper.classList.remove('vote-changed'), 800);
           setTimeout(() => sortCandidate(wrapper), 800);
+          saveState();
         }
       });
 
@@ -317,6 +308,33 @@
       wrapper.appendChild(voteSpan);
       wrapper.appendChild(upButton);
       wrapper.appendChild(downButton);
+
+      // Add delete button
+      const deleteButton = document.createElement('button');
+      deleteButton.className = 'vote-button';
+      deleteButton.textContent = '❌';
+      deleteButton.style.backgroundColor = '#c62828';
+      deleteButton.style.marginLeft = 'auto';
+      deleteButton.title = 'Fjern ansøger';
+      deleteButton.addEventListener('click', () => {
+        if (confirm(`Fjern ${name}?`)) {
+          wrapper.remove();
+          saveState();
+        }
+      });
+      wrapper.appendChild(deleteButton);
+
+      // Interview toggle button
+      const interviewToggle = document.createElement('button');
+      interviewToggle.className = 'vote-button';
+      interviewToggle.textContent = '✅';
+      interviewToggle.style.backgroundColor = '#2e7d32';
+      interviewToggle.title = 'Marker til samtale';
+      interviewToggle.addEventListener('click', () => {
+        wrapper.classList.toggle('interview');
+        saveState();
+      });
+      wrapper.appendChild(interviewToggle);
 
       wrapper.addEventListener('dragstart', () => {
         wrapper.classList.add('dragging');
@@ -330,6 +348,7 @@
 
     function sortCandidate(candidate) {
       const parent = candidate.parentNode;
+      if (!parent) return; // Prevents error if parent is null
       const candidates = Array.from(parent.querySelectorAll('.candidate'));
       candidates.sort((a, b) => {
         const votesA = parseInt(a.querySelector('.vote-count').dataset.votes, 10);
@@ -337,6 +356,7 @@
         return votesB - votesA;
       });
       candidates.forEach(c => parent.appendChild(c));
+      saveState();
     }
 
     function makeDraggable() {
@@ -347,6 +367,7 @@
         });
         candidate.addEventListener('dragend', () => {
           candidate.classList.remove('dragging');
+          saveState();
         });
       });
     }
@@ -389,16 +410,11 @@
 
     function saveState() {
       const state = {
-        interview: [...document.querySelectorAll('#interview .candidate')].map(el => {
-          return {
-            name: el.querySelector('span').textContent,
-            votes: parseInt(el.querySelector('.vote-count').dataset.votes, 10)
-          };
-        }),
         noInterview: [...document.querySelectorAll('#no-interview .candidate')].map(el => {
           return {
             name: el.querySelector('span').textContent,
-            votes: parseInt(el.querySelector('.vote-count').dataset.votes, 10)
+            votes: parseInt(el.querySelector('.vote-count').dataset.votes, 10),
+            interview: el.classList.contains('interview')
           };
         })
       };
@@ -409,29 +425,24 @@
     function loadState() {
       const state = JSON.parse(localStorage.getItem('ansoegerState'));
       if (!state) return;
-      ['interview', 'no-interview'].forEach(id => {
-        const column = document.getElementById(id);
-        column.querySelectorAll('.candidate').forEach(el => el.remove());
-        (state[id === 'interview' ? 'interview' : 'noInterview'] || []).forEach(obj => {
-          const c = createCandidateElement(obj.name);
-          const voteSpan = c.querySelector('.vote-count');
-          const nameSpan = c.querySelector('span');
-          voteSpan.dataset.votes = obj.votes;
-          nameSpan.textContent = obj.name;
-          voteSpan.textContent = obj.votes;
-          column.appendChild(c);
-        });
+      const column = document.getElementById('no-interview');
+      column.querySelectorAll('.candidate').forEach(el => el.remove());
+      (state.noInterview || []).forEach(obj => {
+        const c = createCandidateElement(obj.name);
+        const voteSpan = c.querySelector('.vote-count');
+        const nameSpan = c.querySelector('span');
+        voteSpan.dataset.votes = obj.votes;
+        nameSpan.textContent = obj.name;
+        voteSpan.textContent = obj.votes;
+        if (obj.interview) {
+          c.classList.add('interview');
+        }
+        column.appendChild(c);
       });
       makeDraggable();
       updateApplicantCount();
     }
 
-    function resetAll() {
-      if (confirm('Er du sikker på at nulstille alt?')) {
-        localStorage.removeItem('ansoegerState');
-        location.reload();
-      }
-    }
 
     document.querySelectorAll('.search-input').forEach(input => {
       input.addEventListener('input', (e) => {
@@ -444,8 +455,6 @@
     });
 
     // Initialize with default candidates
-    const defaultInterviewCandidates = [];
-
     const defaultNoInterviewCandidates = [
       'Maja Thomasen',
       'Maria Vesterskov Kristensen',
@@ -479,19 +488,12 @@
       'Ea Maagaard'
     ];
 
-    const interviewColumn = document.getElementById('interview');
-    defaultInterviewCandidates.forEach(name => {
-      const c = createCandidateElement(name);
-      interviewColumn.appendChild(c);
-    });
-
     const noInterviewColumn = document.getElementById('no-interview');
     defaultNoInterviewCandidates.forEach(name => {
       const c = createCandidateElement(name);
       noInterviewColumn.appendChild(c);
     });
     updateApplicantCount();
-
     makeDraggable();
 
     function updateApplicantCount() {
@@ -499,12 +501,137 @@
       document.getElementById('applicant-count').textContent = count;
     }
 
+</script>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.9.1/firebase-app.js";
+    import { getFirestore, doc, setDoc, getDoc, collection, getDocs, updateDoc } from "https://www.gstatic.com/firebasejs/11.9.1/firebase-firestore.js";
+    import { onSnapshot } from "https://www.gstatic.com/firebasejs/11.9.1/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyDggvX6bpSNRlUdLnO1svl4lRt_jyhxiSw",
+      authDomain: "ansoeningsproces.firebaseapp.com",
+      databaseURL: "https://ansoeningsproces-default-rtdb.europe-west1.firebasedatabase.app",
+      projectId: "ansoeningsproces",
+      storageBucket: "ansoeningsproces.firebasestorage.app",
+      messagingSenderId: "388864518466",
+      appId: "1:388864518466:web:92166c3e8bfc5c635240db"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    // Utility function to show status messages
     function showStatus(message) {
-      const status = document.getElementById("status-message");
-      status.textContent = message;
-      status.style.opacity = 1;
-      setTimeout(() => status.style.opacity = 0, 3000);
+      // Status messages disabled as requested, function kept to avoid reference errors
     }
+
+    // Save application state to Firestore
+    async function saveStateToFirestore() {
+      const interviewData = [];
+      const noInterviewData = [...document.querySelectorAll('#no-interview .candidate')].map((el, index) => ({
+        name: el.querySelector('span').textContent,
+        votes: parseInt(el.querySelector('.vote-count').dataset.votes, 10),
+        column: 'no-interview',
+        interview: el.classList.contains('interview'),
+        order: index
+      }));
+
+      const allData = [...interviewData, ...noInterviewData];
+
+      for (const item of allData) {
+        const fileName = item.name.toLowerCase().replace(/ /g, '_');
+        await setDoc(doc(db, "ansoegere", fileName), item);
+      }
+
+      showStatus("Data gemt til Firestore.");
+    }
+
+    // Real-time Firestore listener for live updates (optimized version)
+    function setupRealtimeUpdates() {
+      onSnapshot(collection(db, "ansoegere"), (querySnapshot) => {
+        const updatedData = {};
+        querySnapshot.forEach((docSnap) => {
+          updatedData[docSnap.id] = docSnap.data();
+        });
+
+        // Only update the no-interview column, since interview is now a flag
+        const column = document.getElementById('no-interview');
+        const candidates = column.querySelectorAll('.candidate');
+
+        // Track existing candidate IDs in the column
+        const existingIds = new Set();
+        candidates.forEach(candidateEl => {
+          const name = candidateEl.querySelector('span').dataset.name;
+          const id = name.toLowerCase().replace(/ /g, '_');
+          const data = updatedData[id];
+          if (data && data.column === 'no-interview') {
+            // Update vote if changed
+            const voteSpan = candidateEl.querySelector('.vote-count');
+            const currentVotes = parseInt(voteSpan.dataset.votes, 10);
+            if (currentVotes !== data.votes) {
+              voteSpan.dataset.votes = data.votes;
+              voteSpan.textContent = data.votes;
+            }
+            // Update interview class
+            if (data.interview) {
+              candidateEl.classList.add('interview');
+            } else {
+              candidateEl.classList.remove('interview');
+            }
+            existingIds.add(id);
+          }
+        });
+
+        // Add new candidates that are not yet present anywhere in DOM (no duplicates in any column)
+        Object.entries(updatedData).forEach(([id, data]) => {
+          if (data.column !== 'no-interview') return;
+          const existingElement = [...document.querySelectorAll('.candidate span[data-name]')].find(
+            span => span.dataset.name === data.name
+          );
+
+          if (!existingElement) {
+            const c = createCandidateElement(data.name);
+            const voteSpan = c.querySelector('.vote-count');
+            voteSpan.dataset.votes = data.votes;
+            voteSpan.textContent = data.votes;
+            if (data.interview) {
+              c.classList.add('interview');
+            }
+            column.appendChild(c);
+          }
+        });
+
+        // Sort by votes
+        const sorted = Array.from(column.querySelectorAll('.candidate')).sort((a, b) => {
+          const aVotes = parseInt(a.querySelector('.vote-count').dataset.votes, 10);
+          const bVotes = parseInt(b.querySelector('.vote-count').dataset.votes, 10);
+          return bVotes - aVotes;
+        });
+
+        sorted.forEach(el => column.appendChild(el));
+
+        makeDraggable();
+        updateApplicantCount();
+      });
+    }
+
+    setupRealtimeUpdates();
+
+    // Bind Firestore save to button
+    window.saveState = saveStateToFirestore;
   </script>
 </body>
+  <script>
+    const adgangskode = "mejlgade50";
+    if (sessionStorage.getItem("adgangOK") !== "true") {
+      const kode = prompt("Indtast adgangskode:");
+      if (kode === adgangskode) {
+        sessionStorage.setItem("adgangOK", "true");
+      } else {
+        document.body.innerHTML = "<div style='display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;font-size:1.5rem;'>Adgang nægtet.</div>";
+        throw new Error("Forkert adgangskode");
+      }
+    }
+  </script>
 </html>
