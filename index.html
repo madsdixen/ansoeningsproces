@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+  <meta charset="UTF-8">
+  <title>Ansøgersortering</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      width: 100%;
+      font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #e0ecff, #f9faff);
+      color: #333;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+    .header {
+      text-align: center;
+      font-weight: 700;
+      font-size: 2.5rem;
+      padding: 30px 20px 10px;
+      color: #1a237e;
+      user-select: none;
+      letter-spacing: 0.05em;
+    }
+    main {
+      height: calc(100vh - 40px);
+      padding: 0 20px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .container {
+      display: flex;
+      flex: 1 1 auto;
+      min-height: 0;
+      width: 100%;
+      gap: 24px;
+      overflow: hidden;
+    }
+    .column {
+      flex: 1;
+      min-height: 0;
+      background: #fff;
+      padding: 24px 28px 28px;
+      border-radius: 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      scroll-behavior: smooth;
+      transition: box-shadow 0.3s ease;
+    }
+    .column h2 {
+      text-align: center;
+      margin-top: 0;
+      font-weight: 600;
+      font-size: 1.6rem;
+      color: #3949ab;
+      user-select: none;
+    }
+    .candidate {
+      padding: 14px 20px;
+      margin: 12px 0;
+      background: #f4f6fb;
+      border-radius: 14px;
+      cursor: grab;
+      transition: background-color 0.25s ease, box-shadow 0.25s ease;
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+      font-weight: 500;
+      color: #222;
+      user-select: none;
+      position: relative;
+    }
+    .candidate img {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      object-fit: cover;
+      flex-shrink: 0;
+    }
+    .candidate:hover {
+      background: #e8ecf9;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    .candidate.dragging {
+      opacity: 0.6;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+      cursor: grabbing;
+    }
+    .candidate span {
+      flex-basis: 0;
+      flex-grow: 1;
+      max-width: 100%;
+      transition: color 0.3s ease;
+      font-size: 1rem;
+      font-weight: 700;
+    }
+    .candidate.vote-changed span {
+      animation: voteFlash 0.8s ease forwards;
+    }
+    @keyframes voteFlash {
+      0% { color: #333; }
+      50% { color: #1976d2; font-weight: 700; }
+      100% { color: #333; }
+    }
+    .vote-count {
+      background: #e3eafc;
+      color: #1a237e;
+      padding: 4px 0;
+      border-radius: 12px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      width: 28px;
+      flex-shrink: 0;
+      flex-grow: 0;
+      text-align: center;
+      user-select: none;
+    }
+    .controls-wrapper {
+      margin-top: 24px;
+      background: #fff;
+      padding: 16px 20px;
+      border-radius: 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
+    }
+    .controls {
+      max-width: 900px;
+      margin: 0 auto;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      justify-content: center;
+    }
+    .controls input, .controls button {
+      padding: 12px 18px;
+      font-size: 1rem;
+      border-radius: 8px;
+      border: 1.5px solid #bbb;
+      transition: border-color 0.25s ease, background-color 0.25s ease, color 0.25s ease;
+      font-weight: 600;
+      user-select: none;
+      outline-offset: 2px;
+    }
+    .controls input {
+      flex-grow: 1;
+      min-width: 200px;
+      border-color: #ccc;
+      color: #444;
+    }
+    .controls input:focus {
+      border-color: #3949ab;
+      box-shadow: 0 0 6px rgba(57,73,171,0.4);
+    }
+    .controls button {
+      cursor: pointer;
+      background: #3949ab;
+      color: white;
+      border: none;
+      min-width: 100px;
+      box-shadow: 0 4px 8px rgba(57,73,171,0.3);
+      user-select: none;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      transition: background-color 0.3s ease, box-shadow 0.3s ease, transform 0.15s ease;
+    }
+    .controls button:hover {
+      background-color: #283593;
+      box-shadow: 0 6px 14px rgba(40,53,147,0.5);
+      transform: translateY(-2px);
+    }
+    .controls button:active {
+      background-color: #1a237e;
+      box-shadow: 0 3px 7px rgba(26,35,126,0.6);
+      transform: translateY(0);
+    }
+    .search {
+      margin-bottom: 20px;
+    }
+    .search input {
+      width: 100%;
+      padding: 10px 14px;
+      border-radius: 8px;
+      border: 1.5px solid #bbb;
+      font-size: 1rem;
+      transition: border-color 0.25s ease;
+      font-weight: 500;
+      color: #444;
+    }
+    .search input:focus {
+      border-color: #3949ab;
+      box-shadow: 0 0 8px rgba(57,73,171,0.4);
+      outline: none;
+    }
+    .vote-button {
+      background: #3949ab;
+      border: none;
+      color: white;
+      padding: 6px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 1.1rem;
+      user-select: none;
+      box-shadow: 0 3px 7px rgba(57,73,171,0.4);
+      transition: background-color 0.3s ease, box-shadow 0.3s ease, transform 0.15s ease;
+      flex-shrink: 0;
+    }
+    .vote-button:hover {
+      background: #283593;
+      box-shadow: 0 5px 12px rgba(40,53,147,0.6);
+      transform: translateY(-1px);
+    }
+    .vote-button:active {
+      background: #1a237e;
+      box-shadow: 0 2px 6px rgba(26,35,126,0.7);
+      transform: translateY(0);
+    }
+  </style>
+  <script>
+    const adgang = prompt("Siden er adgangsbeskyttet. Indtast kode:");
+    if (adgang !== "mejlgade50") {
+      document.body.innerHTML = "<div style='font-family:sans-serif;text-align:center;margin-top:50px;'><h1>⛔ Adgang nægtet</h1><p>Forkert kode</p></div>";
+      throw new Error("Forkert adgangskode");
+    }
+  </script>
+</head>
+<body>
+  <div id="status-message" style="text-align:center; background:#e6f4ea; color:#2e7d32; padding:10px; margin:0; font-weight:bold; transition: opacity 0.3s ease; opacity: 0;"></div>
+  <!-- <div class="header">Ansøgersortering</div> -->
+  <main>
+    <div class="container">
+      <div class="column dropzone" id="interview">
+        <h2>✅ Til samtale</h2>
+      </div>
+
+
+      <div class="column dropzone" id="no-interview">
+        <h2>📄 Ansøgere (<span id="applicant-count">0</span>)</h2>
+        <div class="search"><input type="text" placeholder="Søg kandidat..." class="search-input" data-zone="no-interview"></div>
+      </div>
+    </div>
+    <div class="controls-wrapper">
+      <div class="controls">
+        <input type="text" id="newName" placeholder="Tilføj ansøger...">
+        <button onclick="addAnsoeger()">Tilføj</button>
+        <button onclick="saveState()">Gem</button>
+        <button onclick="loadState()">Indlæs</button>
+        <button onclick="resetAll()">Nulstil</button>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    function createCandidateElement(name) {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'candidate';
+      wrapper.setAttribute('draggable', true);
+
+      const img = document.createElement('img');
+      // Try to use a specific image if available, fallback to placeholder
+      const fileName = name.replace(/ /g, '_');
+      img.src = `billeder/${fileName}.png`;
+      img.alt = name;
+
+      const votes = 0;
+
+      const nameSpan = document.createElement('span');
+      nameSpan.textContent = name;
+      nameSpan.dataset.name = name;
+
+      const voteSpan = document.createElement('span');
+      voteSpan.className = 'vote-count';
+      voteSpan.textContent = votes;
+      voteSpan.dataset.votes = votes;
+
+      const upButton = document.createElement('button');
+      upButton.className = 'vote-button';
+      upButton.textContent = '⬆️';
+      upButton.addEventListener('click', () => {
+        let currentVotes = parseInt(voteSpan.dataset.votes, 10) + 1;
+        voteSpan.dataset.votes = currentVotes;
+        nameSpan.textContent = name;
+        voteSpan.textContent = currentVotes;
+        wrapper.classList.add('vote-changed');
+        setTimeout(() => wrapper.classList.remove('vote-changed'), 800);
+        setTimeout(() => sortCandidate(wrapper), 800);
+      });
+
+      const downButton = document.createElement('button');
+      downButton.className = 'vote-button';
+      downButton.textContent = '⬇️';
+      downButton.addEventListener('click', () => {
+        let currentVotes = parseInt(voteSpan.dataset.votes, 10);
+        if (currentVotes > 0) {
+          currentVotes--;
+          voteSpan.dataset.votes = currentVotes;
+          nameSpan.textContent = name;
+          voteSpan.textContent = currentVotes;
+          wrapper.classList.add('vote-changed');
+          setTimeout(() => wrapper.classList.remove('vote-changed'), 800);
+          setTimeout(() => sortCandidate(wrapper), 800);
+        }
+      });
+
+      wrapper.appendChild(img);
+      wrapper.appendChild(nameSpan);
+      wrapper.appendChild(voteSpan);
+      wrapper.appendChild(upButton);
+      wrapper.appendChild(downButton);
+
+      wrapper.addEventListener('dragstart', () => {
+        wrapper.classList.add('dragging');
+      });
+      wrapper.addEventListener('dragend', () => {
+        wrapper.classList.remove('dragging');
+      });
+
+      return wrapper;
+    }
+
+    function sortCandidate(candidate) {
+      const parent = candidate.parentNode;
+      const candidates = Array.from(parent.querySelectorAll('.candidate'));
+      candidates.sort((a, b) => {
+        const votesA = parseInt(a.querySelector('.vote-count').dataset.votes, 10);
+        const votesB = parseInt(b.querySelector('.vote-count').dataset.votes, 10);
+        return votesB - votesA;
+      });
+      candidates.forEach(c => parent.appendChild(c));
+    }
+
+    function makeDraggable() {
+      const candidates = document.querySelectorAll('.candidate');
+      candidates.forEach(candidate => {
+        candidate.addEventListener('dragstart', () => {
+          candidate.classList.add('dragging');
+        });
+        candidate.addEventListener('dragend', () => {
+          candidate.classList.remove('dragging');
+        });
+      });
+    }
+
+    function getDragAfterElement(container, y) {
+      const draggableElements = [...container.querySelectorAll('.candidate:not(.dragging)')];
+      return draggableElements.reduce((closest, child) => {
+        const box = child.getBoundingClientRect();
+        const offset = y - box.top - box.height / 2;
+        if (offset < 0 && offset > closest.offset) {
+          return { offset: offset, element: child };
+        } else {
+          return closest;
+        }
+      }, { offset: Number.NEGATIVE_INFINITY }).element;
+    }
+
+    document.querySelectorAll('.dropzone').forEach(zone => {
+      zone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        const dragging = document.querySelector('.dragging');
+        const afterElement = getDragAfterElement(zone, e.clientY);
+        if (afterElement == null) {
+          zone.appendChild(dragging);
+        } else {
+          zone.insertBefore(dragging, afterElement);
+        }
+      });
+    });
+
+    function addAnsoeger() {
+      const name = document.getElementById('newName').value.trim();
+      if (!name) return;
+      const newCandidate = createCandidateElement(name);
+      document.getElementById('no-interview').appendChild(newCandidate);
+      document.getElementById('newName').value = '';
+      makeDraggable();
+      updateApplicantCount();
+    }
+
+    function saveState() {
+      const state = {
+        interview: [...document.querySelectorAll('#interview .candidate')].map(el => {
+          return {
+            name: el.querySelector('span').textContent,
+            votes: parseInt(el.querySelector('.vote-count').dataset.votes, 10)
+          };
+        }),
+        noInterview: [...document.querySelectorAll('#no-interview .candidate')].map(el => {
+          return {
+            name: el.querySelector('span').textContent,
+            votes: parseInt(el.querySelector('.vote-count').dataset.votes, 10)
+          };
+        })
+      };
+      localStorage.setItem('ansoegerState', JSON.stringify(state));
+      showStatus("Ansøgerdata gemt.");
+    }
+
+    function loadState() {
+      const state = JSON.parse(localStorage.getItem('ansoegerState'));
+      if (!state) return;
+      ['interview', 'no-interview'].forEach(id => {
+        const column = document.getElementById(id);
+        column.querySelectorAll('.candidate').forEach(el => el.remove());
+        (state[id === 'interview' ? 'interview' : 'noInterview'] || []).forEach(obj => {
+          const c = createCandidateElement(obj.name);
+          const voteSpan = c.querySelector('.vote-count');
+          const nameSpan = c.querySelector('span');
+          voteSpan.dataset.votes = obj.votes;
+          nameSpan.textContent = obj.name;
+          voteSpan.textContent = obj.votes;
+          column.appendChild(c);
+        });
+      });
+      makeDraggable();
+      updateApplicantCount();
+    }
+
+    function resetAll() {
+      if (confirm('Er du sikker på at nulstille alt?')) {
+        localStorage.removeItem('ansoegerState');
+        location.reload();
+      }
+    }
+
+    document.querySelectorAll('.search-input').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const zoneId = e.target.dataset.zone;
+        const value = e.target.value.toLowerCase();
+        document.querySelectorAll(`#${zoneId} .candidate`).forEach(c => {
+          c.style.display = c.querySelector('span').textContent.toLowerCase().includes(value) ? 'flex' : 'none';
+        });
+      });
+    });
+
+    // Initialize with default candidates
+    const defaultInterviewCandidates = [];
+
+    const defaultNoInterviewCandidates = [
+      'Maja Thomasen',
+      'Maria Vesterskov Kristensen',
+      'Ditte Bramstoft',
+      'Julie Tornhøj',
+      'Andrea Vemgaard',
+      'Anna Hessel Hillemann',
+      'Amalie Løbner',
+      'Clara Demuth',
+      'Elisabeth Sørensen',
+      'Alfred Berg Overgaard',
+      'Emma Schelde',
+      'Anton Alnor',
+      'Tille Frederiksen',
+      'Hannah Nødset',
+      'Nanna Roed Bang-Jensen',
+      'Lykke Schultz',
+      'Nina Nielsen',
+      'Anna Elmholdt Bland',
+      'Søren Truelsen',
+      'Oliver Grainger',
+      'Cecilie Hellesøe',
+      'Thomas',
+      'Kristine josef Andersen',
+      'Noor Johnsen',
+      'Juliette du Marchie Sarvaas',
+      'Ester Simonsson',
+      'Emilie Ebbesen',
+      'Lea Villadsen',
+      'Mathilde Kjær Nielsen',
+      'Ea Maagaard'
+    ];
+
+    const interviewColumn = document.getElementById('interview');
+    defaultInterviewCandidates.forEach(name => {
+      const c = createCandidateElement(name);
+      interviewColumn.appendChild(c);
+    });
+
+    const noInterviewColumn = document.getElementById('no-interview');
+    defaultNoInterviewCandidates.forEach(name => {
+      const c = createCandidateElement(name);
+      noInterviewColumn.appendChild(c);
+    });
+    updateApplicantCount();
+
+    makeDraggable();
+
+    function updateApplicantCount() {
+      const count = document.querySelectorAll('#no-interview .candidate').length;
+      document.getElementById('applicant-count').textContent = count;
+    }
+
+    function showStatus(message) {
+      const status = document.getElementById("status-message");
+      status.textContent = message;
+      status.style.opacity = 1;
+      setTimeout(() => status.style.opacity = 0, 3000);
+    }
+  </script>
+</body>
+</html>
