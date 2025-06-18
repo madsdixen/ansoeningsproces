@@ -67,8 +67,7 @@
       margin: 12px 0;
       background: #f4f6fb;
       border-radius: 14px;
-      cursor: grab;
-      transition: background-color 0.25s ease, box-shadow 0.25s ease;
+      transition: transform 0.35s ease, background-color 0.3s ease, box-shadow 0.3s ease;
       display: flex;
       align-items: flex-start;
       gap: 14px;
@@ -92,11 +91,6 @@
     .candidate:hover {
       background: #e8ecf9;
       box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-    }
-    .candidate.dragging {
-      opacity: 0.6;
-      box-shadow: 0 8px 20px rgba(0,0,0,0.15);
-      cursor: grabbing;
     }
     .candidate span {
       flex-basis: 0;
@@ -250,10 +244,20 @@
   </main>
 
   <script>
+    // Debounced Firestore save (global scope, before createCandidateElement)
+    let firestoreSaveTimeout;
+    function debouncedSave() {
+      clearTimeout(firestoreSaveTimeout);
+      firestoreSaveTimeout = setTimeout(() => {
+        if (typeof saveStateToFirestore === 'function') {
+          saveStateToFirestore();
+        }
+      }, 1500);
+    }
+
     function createCandidateElement(name) {
       const wrapper = document.createElement('div');
       wrapper.className = 'candidate';
-      wrapper.setAttribute('draggable', true);
 
       const img = document.createElement('img');
       // Try to use a specific image if available, fallback to placeholder
@@ -275,33 +279,27 @@
       const upButton = document.createElement('button');
       upButton.className = 'vote-button';
       upButton.textContent = '⬆️';
-      upButton.addEventListener('click', async () => {
-        let currentVotes = parseInt(voteSpan.dataset.votes, 10) + 1;
-        voteSpan.dataset.votes = currentVotes;
-        nameSpan.textContent = name;
-        voteSpan.textContent = currentVotes;
-        wrapper.classList.add('vote-changed');
-        setTimeout(() => wrapper.classList.remove('vote-changed'), 800);
-        setTimeout(() => sortCandidate(wrapper), 800);
-        saveState();
-      });
 
       const downButton = document.createElement('button');
       downButton.className = 'vote-button';
       downButton.textContent = '⬇️';
-      downButton.addEventListener('click', async () => {
+
+      // Centralized vote update function
+      function updateVote(change) {
         let currentVotes = parseInt(voteSpan.dataset.votes, 10);
-        if (currentVotes > 0) {
-          currentVotes--;
-          voteSpan.dataset.votes = currentVotes;
-          nameSpan.textContent = name;
-          voteSpan.textContent = currentVotes;
-          wrapper.classList.add('vote-changed');
-          setTimeout(() => wrapper.classList.remove('vote-changed'), 800);
-          setTimeout(() => sortCandidate(wrapper), 800);
-          saveState();
-        }
-      });
+        currentVotes = Math.max(0, currentVotes + change);
+        voteSpan.dataset.votes = currentVotes;
+        voteSpan.textContent = currentVotes;
+        wrapper.classList.add('vote-changed');
+        setTimeout(() => wrapper.classList.remove('vote-changed'), 800);
+        setTimeout(() => {
+          sortCandidate(wrapper);
+          debouncedSave();
+        }, 850);
+      }
+
+      upButton.addEventListener('click', () => updateVote(1));
+      downButton.addEventListener('click', () => updateVote(-1));
 
       wrapper.appendChild(img);
       wrapper.appendChild(nameSpan);
@@ -319,7 +317,7 @@
       deleteButton.addEventListener('click', () => {
         if (confirm(`Fjern ${name}?`)) {
           wrapper.remove();
-          saveState();
+          debouncedSave();
         }
       });
       wrapper.appendChild(deleteButton);
@@ -332,16 +330,9 @@
       interviewToggle.title = 'Marker til samtale';
       interviewToggle.addEventListener('click', () => {
         wrapper.classList.toggle('interview');
-        saveState();
+        debouncedSave();
       });
       wrapper.appendChild(interviewToggle);
-
-      wrapper.addEventListener('dragstart', () => {
-        wrapper.classList.add('dragging');
-      });
-      wrapper.addEventListener('dragend', () => {
-        wrapper.classList.remove('dragging');
-      });
 
       return wrapper;
     }
@@ -350,53 +341,38 @@
       const parent = candidate.parentNode;
       if (!parent) return; // Prevents error if parent is null
       const candidates = Array.from(parent.querySelectorAll('.candidate'));
+      // Store initial positions
+      const positions = new Map();
+      candidates.forEach(c => {
+        positions.set(c, c.getBoundingClientRect().top);
+      });
+
       candidates.sort((a, b) => {
         const votesA = parseInt(a.querySelector('.vote-count').dataset.votes, 10);
         const votesB = parseInt(b.querySelector('.vote-count').dataset.votes, 10);
         return votesB - votesA;
       });
+
       candidates.forEach(c => parent.appendChild(c));
-      saveState();
-    }
 
-    function makeDraggable() {
-      const candidates = document.querySelectorAll('.candidate');
-      candidates.forEach(candidate => {
-        candidate.addEventListener('dragstart', () => {
-          candidate.classList.add('dragging');
-        });
-        candidate.addEventListener('dragend', () => {
-          candidate.classList.remove('dragging');
-          saveState();
+      requestAnimationFrame(() => {
+        candidates.forEach(c => {
+          const newTop = c.getBoundingClientRect().top;
+          const oldTop = positions.get(c);
+          const deltaY = oldTop - newTop;
+
+          if (deltaY !== 0) {
+            c.style.transform = `translateY(${deltaY}px)`;
+            requestAnimationFrame(() => {
+              c.style.transition = 'transform 0.35s ease';
+              c.style.transform = '';
+            });
+          }
         });
       });
+      debouncedSave();
     }
 
-    function getDragAfterElement(container, y) {
-      const draggableElements = [...container.querySelectorAll('.candidate:not(.dragging)')];
-      return draggableElements.reduce((closest, child) => {
-        const box = child.getBoundingClientRect();
-        const offset = y - box.top - box.height / 2;
-        if (offset < 0 && offset > closest.offset) {
-          return { offset: offset, element: child };
-        } else {
-          return closest;
-        }
-      }, { offset: Number.NEGATIVE_INFINITY }).element;
-    }
-
-    document.querySelectorAll('.dropzone').forEach(zone => {
-      zone.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        const dragging = document.querySelector('.dragging');
-        const afterElement = getDragAfterElement(zone, e.clientY);
-        if (afterElement == null) {
-          zone.appendChild(dragging);
-        } else {
-          zone.insertBefore(dragging, afterElement);
-        }
-      });
-    });
 
     function addAnsoeger() {
       const name = document.getElementById('newName').value.trim();
@@ -404,7 +380,6 @@
       const newCandidate = createCandidateElement(name);
       document.getElementById('no-interview').appendChild(newCandidate);
       document.getElementById('newName').value = '';
-      makeDraggable();
       updateApplicantCount();
     }
 
@@ -439,7 +414,6 @@
         }
         column.appendChild(c);
       });
-      makeDraggable();
       updateApplicantCount();
     }
 
@@ -494,7 +468,6 @@
       noInterviewColumn.appendChild(c);
     });
     updateApplicantCount();
-    makeDraggable();
 
     function updateApplicantCount() {
       const count = document.querySelectorAll('#no-interview .candidate').length;
@@ -526,7 +499,8 @@
       // Status messages disabled as requested, function kept to avoid reference errors
     }
 
-    // Save application state to Firestore
+    // Save application state to Firestore using batch writes
+    import { writeBatch } from "https://www.gstatic.com/firebasejs/11.9.1/firebase-firestore.js";
     async function saveStateToFirestore() {
       const interviewData = [];
       const noInterviewData = [...document.querySelectorAll('#no-interview .candidate')].map((el, index) => ({
@@ -539,16 +513,21 @@
 
       const allData = [...interviewData, ...noInterviewData];
 
+      const batch = writeBatch(db);
       for (const item of allData) {
         const fileName = item.name.toLowerCase().replace(/ /g, '_');
-        await setDoc(doc(db, "ansoegere", fileName), item);
+        const docRef = doc(db, "ansoegere", fileName);
+        batch.set(docRef, item);
       }
+      await batch.commit();
 
       showStatus("Data gemt til Firestore.");
     }
 
     // Real-time Firestore listener for live updates (optimized version)
     function setupRealtimeUpdates() {
+      // Cache selectors for performance
+      const column = document.getElementById('no-interview');
       onSnapshot(collection(db, "ansoegere"), (querySnapshot) => {
         const updatedData = {};
         querySnapshot.forEach((docSnap) => {
@@ -556,7 +535,6 @@
         });
 
         // Only update the no-interview column, since interview is now a flag
-        const column = document.getElementById('no-interview');
         const candidates = column.querySelectorAll('.candidate');
 
         // Track existing candidate IDs in the column
@@ -602,22 +580,31 @@
           }
         });
 
-        // Sort by votes
+        // Sort by votes, debounce DOM changes to avoid flicker
         const sorted = Array.from(column.querySelectorAll('.candidate')).sort((a, b) => {
           const aVotes = parseInt(a.querySelector('.vote-count').dataset.votes, 10);
           const bVotes = parseInt(b.querySelector('.vote-count').dataset.votes, 10);
           return bVotes - aVotes;
         });
 
-        sorted.forEach(el => column.appendChild(el));
+        requestAnimationFrame(() => {
+          sorted.forEach(el => column.appendChild(el));
+        });
 
-        makeDraggable();
         updateApplicantCount();
       });
     }
 
     setupRealtimeUpdates();
 
+    // Debounced Firestore save
+    let firestoreSaveTimeout;
+    function debouncedSave() {
+      clearTimeout(firestoreSaveTimeout);
+      firestoreSaveTimeout = setTimeout(() => {
+        saveStateToFirestore();
+      }, 1500);
+    }
     // Bind Firestore save to button
     window.saveState = saveStateToFirestore;
   </script>
