@@ -268,7 +268,7 @@
 
       const img = document.createElement('img');
       // Try to use a specific image if available, fallback to placeholder
-      const fileName = name.replace(/ /g, '_');
+      const fileName = name.toLowerCase().replace(/ /g, '_');
       img.src = `billeder/${fileName}.png`;
       img.alt = name;
 
