@@ -244,17 +244,8 @@
   </main>
 
   <script>
-    // Debounced Firestore save (global scope, before createCandidateElement)
-    let firestoreSaveTimeout;
-    function debouncedSave() {
-      clearTimeout(firestoreSaveTimeout);
-      firestoreSaveTimeout = setTimeout(() => {
-        if (typeof saveStateToFirestore === 'function') {
-          saveStateToFirestore();
-        }
-      }, 1500);
-    }
-
+    // Ensure debouncedSave is defined globally before any use
+    window.debouncedSave = () => {};
     function createCandidateElement(name) {
       const wrapper = document.createElement('div');
       wrapper.className = 'candidate';
@@ -292,10 +283,9 @@
         voteSpan.textContent = currentVotes;
         wrapper.classList.add('vote-changed');
         setTimeout(() => wrapper.classList.remove('vote-changed'), 800);
-        setTimeout(() => {
-          sortCandidate(wrapper);
-          debouncedSave();
-        }, 850);
+        // Immediately sort and save after animation trigger, not delayed
+        sortCandidate(wrapper);
+        debouncedSave();
       }
 
       upButton.addEventListener('click', () => updateVote(1));
@@ -383,39 +373,6 @@
       updateApplicantCount();
     }
 
-    function saveState() {
-      const state = {
-        noInterview: [...document.querySelectorAll('#no-interview .candidate')].map(el => {
-          return {
-            name: el.querySelector('span').textContent,
-            votes: parseInt(el.querySelector('.vote-count').dataset.votes, 10),
-            interview: el.classList.contains('interview')
-          };
-        })
-      };
-      localStorage.setItem('ansoegerState', JSON.stringify(state));
-      showStatus("Ansøgerdata gemt.");
-    }
-
-    function loadState() {
-      const state = JSON.parse(localStorage.getItem('ansoegerState'));
-      if (!state) return;
-      const column = document.getElementById('no-interview');
-      column.querySelectorAll('.candidate').forEach(el => el.remove());
-      (state.noInterview || []).forEach(obj => {
-        const c = createCandidateElement(obj.name);
-        const voteSpan = c.querySelector('.vote-count');
-        const nameSpan = c.querySelector('span');
-        voteSpan.dataset.votes = obj.votes;
-        nameSpan.textContent = obj.name;
-        voteSpan.textContent = obj.votes;
-        if (obj.interview) {
-          c.classList.add('interview');
-        }
-        column.appendChild(c);
-      });
-      updateApplicantCount();
-    }
 
 
     document.querySelectorAll('.search-input').forEach(input => {
@@ -428,46 +385,7 @@
       });
     });
 
-    // Initialize with default candidates
-    const defaultNoInterviewCandidates = [
-      'Maja Thomasen',
-      'Maria Vesterskov Kristensen',
-      'Ditte Bramstoft',
-      'Julie Tornhøj',
-      'Andrea Vemgaard',
-      'Anna Hessel Hillemann',
-      'Amalie Løbner',
-      'Clara Demuth',
-      'Elisabeth Sørensen',
-      'Alfred Berg Overgaard',
-      'Emma Schelde',
-      'Anton Alnor',
-      'Tille Frederiksen',
-      'Hannah Nødset',
-      'Nanna Roed Bang-Jensen',
-      'Lykke Schultz',
-      'Nina Nielsen',
-      'Anna Elmholdt Bland',
-      'Søren Truelsen',
-      'Oliver Grainger',
-      'Cecilie Hellesøe',
-      'Thomas',
-      'Kristine josef Andersen',
-      'Noor Johnsen',
-      'Juliette du Marchie Sarvaas',
-      'Ester Simonsson',
-      'Emilie Ebbesen',
-      'Lea Villadsen',
-      'Mathilde Kjær Nielsen',
-      'Ea Maagaard'
-    ];
-
-    const noInterviewColumn = document.getElementById('no-interview');
-    defaultNoInterviewCandidates.forEach(name => {
-      const c = createCandidateElement(name);
-      noInterviewColumn.appendChild(c);
-    });
-    updateApplicantCount();
+    // No default candidates or local initialization; Firestore handles syncing.
 
     function updateApplicantCount() {
       const count = document.querySelectorAll('#no-interview .candidate').length;
@@ -477,10 +395,11 @@
 </script>
 
   <script type="module">
+    // Firebase SDK imports
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.9.1/firebase-app.js";
-    import { getFirestore, doc, setDoc, getDoc, collection, getDocs, updateDoc } from "https://www.gstatic.com/firebasejs/11.9.1/firebase-firestore.js";
-    import { onSnapshot } from "https://www.gstatic.com/firebasejs/11.9.1/firebase-firestore.js";
+    import { getFirestore, doc, setDoc, getDoc, collection, getDocs, updateDoc, writeBatch, onSnapshot } from "https://www.gstatic.com/firebasejs/11.9.1/firebase-firestore.js";
 
+    // Firebase config
     const firebaseConfig = {
       apiKey: "AIzaSyDggvX6bpSNRlUdLnO1svl4lRt_jyhxiSw",
       authDomain: "ansoeningsproces.firebaseapp.com",
@@ -491,42 +410,53 @@
       appId: "1:388864518466:web:92166c3e8bfc5c635240db"
     };
 
+    // Initialize Firebase
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
 
     // Utility function to show status messages
     function showStatus(message) {
-      // Status messages disabled as requested, function kept to avoid reference errors
+      // disabled
     }
 
-    // Save application state to Firestore using batch writes
-    import { writeBatch } from "https://www.gstatic.com/firebasejs/11.9.1/firebase-firestore.js";
     async function saveStateToFirestore() {
-      const interviewData = [];
-      const noInterviewData = [...document.querySelectorAll('#no-interview .candidate')].map((el, index) => ({
-        name: el.querySelector('span').textContent,
-        votes: parseInt(el.querySelector('.vote-count').dataset.votes, 10),
-        column: 'no-interview',
-        interview: el.classList.contains('interview'),
-        order: index
-      }));
+      const snapshot = await getDocs(collection(db, "ansoegere"));
+      const currentData = {};
+      snapshot.forEach(docSnap => {
+        currentData[docSnap.id] = docSnap.data();
+      });
 
-      const allData = [...interviewData, ...noInterviewData];
+      const noInterviewData = [...document.querySelectorAll('#no-interview .candidate')].map((el, index) => {
+        return {
+          name: el.querySelector('span').textContent,
+          votes: parseInt(el.querySelector('.vote-count').dataset.votes, 10),
+          column: 'no-interview',
+          interview: el.classList.contains('interview'),
+          order: index
+        };
+      });
 
       const batch = writeBatch(db);
-      for (const item of allData) {
+      for (const item of noInterviewData) {
         const fileName = item.name.toLowerCase().replace(/ /g, '_');
-        const docRef = doc(db, "ansoegere", fileName);
-        batch.set(docRef, item);
+        const existing = currentData[fileName];
+        // Log which candidates are being saved
+        console.log("Saving to Firestore:", fileName, item);
+        if (
+          !existing ||
+          existing.votes !== item.votes ||
+          existing.interview !== item.interview ||
+          existing.order !== item.order
+        ) {
+          const docRef = doc(db, "ansoegere", fileName);
+          batch.set(docRef, item);
+        }
       }
       await batch.commit();
-
-      showStatus("Data gemt til Firestore.");
+      console.log("Firestore state saved");
     }
 
-    // Real-time Firestore listener for live updates (optimized version)
     function setupRealtimeUpdates() {
-      // Cache selectors for performance
       const column = document.getElementById('no-interview');
       onSnapshot(collection(db, "ansoegere"), (querySnapshot) => {
         const updatedData = {};
@@ -534,24 +464,19 @@
           updatedData[docSnap.id] = docSnap.data();
         });
 
-        // Only update the no-interview column, since interview is now a flag
         const candidates = column.querySelectorAll('.candidate');
-
-        // Track existing candidate IDs in the column
         const existingIds = new Set();
         candidates.forEach(candidateEl => {
           const name = candidateEl.querySelector('span').dataset.name;
           const id = name.toLowerCase().replace(/ /g, '_');
           const data = updatedData[id];
           if (data && data.column === 'no-interview') {
-            // Update vote if changed
             const voteSpan = candidateEl.querySelector('.vote-count');
             const currentVotes = parseInt(voteSpan.dataset.votes, 10);
             if (currentVotes !== data.votes) {
               voteSpan.dataset.votes = data.votes;
               voteSpan.textContent = data.votes;
             }
-            // Update interview class
             if (data.interview) {
               candidateEl.classList.add('interview');
             } else {
@@ -561,32 +486,26 @@
           }
         });
 
-        // Add new candidates that are not yet present anywhere in DOM (no duplicates in any column)
         Object.entries(updatedData).forEach(([id, data]) => {
           if (data.column !== 'no-interview') return;
           const existingElement = [...document.querySelectorAll('.candidate span[data-name]')].find(
-            span => span.dataset.name === data.name
+            span => span.dataset.name.toLowerCase().replace(/ /g, '_') === id
           );
-
           if (!existingElement) {
             const c = createCandidateElement(data.name);
             const voteSpan = c.querySelector('.vote-count');
             voteSpan.dataset.votes = data.votes;
             voteSpan.textContent = data.votes;
-            if (data.interview) {
-              c.classList.add('interview');
-            }
+            if (data.interview) c.classList.add('interview');
             column.appendChild(c);
           }
         });
 
-        // Sort by votes, debounce DOM changes to avoid flicker
         const sorted = Array.from(column.querySelectorAll('.candidate')).sort((a, b) => {
           const aVotes = parseInt(a.querySelector('.vote-count').dataset.votes, 10);
           const bVotes = parseInt(b.querySelector('.vote-count').dataset.votes, 10);
           return bVotes - aVotes;
         });
-
         requestAnimationFrame(() => {
           sorted.forEach(el => column.appendChild(el));
         });
@@ -597,28 +516,16 @@
 
     setupRealtimeUpdates();
 
-    // Debounced Firestore save
-    let firestoreSaveTimeout;
     function debouncedSave() {
-      clearTimeout(firestoreSaveTimeout);
-      firestoreSaveTimeout = setTimeout(() => {
+      console.log("Debounced save triggered");
+      clearTimeout(window.firestoreSaveTimeout);
+      window.firestoreSaveTimeout = setTimeout(() => {
+        console.log("Calling saveStateToFirestore...");
         saveStateToFirestore();
       }, 1500);
     }
-    // Bind Firestore save to button
-    window.saveState = saveStateToFirestore;
+    window.debouncedSave = debouncedSave;
+
   </script>
 </body>
-  <script>
-    const adgangskode = "mejlgade50";
-    if (sessionStorage.getItem("adgangOK") !== "true") {
-      const kode = prompt("Indtast adgangskode:");
-      if (kode === adgangskode) {
-        sessionStorage.setItem("adgangOK", "true");
-      } else {
-        document.body.innerHTML = "<div style='display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;font-size:1.5rem;'>Adgang nægtet.</div>";
-        throw new Error("Forkert adgangskode");
-      }
-    }
-  </script>
 </html>
